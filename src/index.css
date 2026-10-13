@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+
+@utility input {
+  @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-100 disabled:text-slate-500;
+}
+
+@utility label {
+  @apply mb-1 block text-xs font-semibold tracking-wide text-slate-600 uppercase;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-indigo-600 text-white hover:bg-indigo-700;
+}
+
+@utility btn-secondary {
+  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+}
+
+@utility btn-success {
+  @apply btn bg-emerald-600 text-white hover:bg-emerald-700;
+}
+
+@utility btn-danger {
+  @apply btn bg-rose-600 text-white hover:bg-rose-700;
+}
+
+@utility card {
+  @apply rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6;
+}
+
+@utility th {
+  @apply px-3 py-2 text-left text-xs font-semibold tracking-wide text-slate-600 uppercase;
+}
+
+@utility td {
+  @apply px-3 py-2 align-middle text-sm;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
