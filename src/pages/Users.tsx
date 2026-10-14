@@ -5,6 +5,27 @@ import type { Profile, Role } from '../lib/types'
 
 const blank = { email: '', password: '', full_name: '', role: 'user' as Role }
 
+/** Call an Edge Function and return its JSON, throwing the function's own error message. */
+async function invokeFn<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body })
+  if (error || data?.error) {
+    let msg = data?.error ?? errorMessage(error)
+    // FunctionsHttpError carries the JSON body in context
+    const ctx = (error as { context?: Response } | null)?.context
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        msg = (await ctx.json()).error ?? msg
+      } catch {
+        /* ignore */
+      }
+    }
+    if (/failed to send a request|not found/i.test(msg))
+      msg += ` – is the "${name}" Edge Function deployed? (npx supabase functions deploy ${name})`
+    throw new Error(msg)
+  }
+  return data as T
+}
+
 export default function Users() {
   const { profile: me } = useAuth()
   const [users, setUsers] = useState<Profile[]>([])
@@ -17,6 +38,7 @@ export default function Users() {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .order('disabled')
       .order('approved')
       .order('created_at')
     if (error) setError(errorMessage(error))
@@ -32,28 +54,45 @@ export default function Users() {
     setBusy(true)
     setError('')
     setNotice('')
-    const { data, error } = await supabase.functions.invoke('admin-create-user', { body: form })
-    setBusy(false)
-    if (error || data?.error) {
-      let msg = data?.error ?? errorMessage(error)
-      // FunctionsHttpError carries the JSON body in context
-      const ctx = (error as { context?: Response } | null)?.context
-      if (ctx && typeof ctx.json === 'function') {
-        try {
-          msg = (await ctx.json()).error ?? msg
-        } catch {
-          /* ignore */
-        }
-      }
-      setError(msg)
+    try {
+      await invokeFn('admin-create-user', form)
+    } catch (err) {
+      setError(errorMessage(err))
       return
+    } finally {
+      setBusy(false)
     }
     setNotice(`User ${form.email} created`)
     setForm(blank)
     load()
   }
 
-  const pending = users.filter((u) => !u.approved && u.role !== 'admin').length
+  const pending = users.filter((u) => !u.approved && !u.disabled && u.role !== 'admin').length
+
+  const remove = async (u: Profile) => {
+    const who = u.full_name || u.email
+    if (
+      !confirm(`Delete user ${who}?
+
+They will no longer be able to sign in. If they have entered challans, their name is kept on those challans.`)
+    )
+      return
+    setError('')
+    setNotice('')
+    try {
+      const res = await invokeFn<{ mode: 'deleted' | 'disabled'; challans?: number }>('admin-delete-user', {
+        user_id: u.id,
+      })
+      setNotice(
+        res.mode === 'deleted'
+          ? `User ${who} deleted`
+          : `User ${who} removed. Login is blocked; their name stays on ${res.challans} challan(s).`,
+      )
+      load()
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
 
   const update = async (u: Profile, patch: Partial<Pick<Profile, 'full_name' | 'role' | 'approved'>>) => {
     const { error } = await supabase.from('profiles').update(patch).eq('id', u.id)
@@ -135,55 +174,77 @@ export default function Users() {
               <th className="th">Role</th>
               <th className="th">Access</th>
               <th className="th">Created</th>
+              <th className="th" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {users.map((u) => (
-              <tr key={u.id} className={!u.approved && u.role !== 'admin' ? 'bg-amber-50' : ''}>
-                <td className="td">
-                  <input
-                    className="input"
-                    defaultValue={u.full_name}
-                    onBlur={(e) => e.target.value !== u.full_name && update(u, { full_name: e.target.value })}
-                  />
-                </td>
-                <td className="td text-slate-600">{u.email}</td>
-                <td className="td">
-                  <select
-                    className="input"
-                    value={u.role}
-                    disabled={u.id === me?.id}
-                    title={u.id === me?.id ? 'You cannot change your own role' : ''}
-                    onChange={(e) => update(u, { role: e.target.value as Role })}
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </td>
-                <td className="td whitespace-nowrap">
-                  {u.role === 'admin' ? (
-                    <span className="text-xs text-slate-500">Always</span>
-                  ) : u.approved ? (
-                    <span className="flex items-center gap-2">
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                        Approved
-                      </span>
-                      <button
-                        className="text-xs font-medium text-rose-600 hover:underline"
-                        onClick={() => update(u, { approved: false })}
-                      >
-                        Revoke
-                      </button>
+            {users.map((u) =>
+              u.disabled ? (
+                <tr key={u.id} className="text-slate-400">
+                  <td className="td">{u.full_name}</td>
+                  <td className="td">{u.email}</td>
+                  <td className="td" colSpan={2}>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                      Removed – kept for challan history
                     </span>
-                  ) : (
-                    <button className="btn-success px-3 py-1 text-xs" onClick={() => update(u, { approved: true })}>
-                      Approve
-                    </button>
-                  )}
-                </td>
-                <td className="td text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="td">{new Date(u.created_at).toLocaleDateString()}</td>
+                  <td className="td" />
+                </tr>
+              ) : (
+                <tr key={u.id} className={!u.approved && u.role !== 'admin' ? 'bg-amber-50' : ''}>
+                  <td className="td">
+                    <input
+                      className="input"
+                      defaultValue={u.full_name}
+                      onBlur={(e) => e.target.value !== u.full_name && update(u, { full_name: e.target.value })}
+                    />
+                  </td>
+                  <td className="td text-slate-600">{u.email}</td>
+                  <td className="td">
+                    <select
+                      className="input"
+                      value={u.role}
+                      disabled={u.id === me?.id}
+                      title={u.id === me?.id ? 'You cannot change your own role' : ''}
+                      onChange={(e) => update(u, { role: e.target.value as Role })}
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                  <td className="td whitespace-nowrap">
+                    {u.role === 'admin' ? (
+                      <span className="text-xs text-slate-500">Always</span>
+                    ) : u.approved ? (
+                      <span className="flex items-center gap-2">
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          Approved
+                        </span>
+                        <button
+                          className="text-xs font-medium text-rose-600 hover:underline"
+                          onClick={() => update(u, { approved: false })}
+                        >
+                          Revoke
+                        </button>
+                      </span>
+                    ) : (
+                      <button className="btn-success px-3 py-1 text-xs" onClick={() => update(u, { approved: true })}>
+                        Approve
+                      </button>
+                    )}
+                  </td>
+                  <td className="td text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
+                  <td className="td text-right">
+                    {u.id !== me?.id && (
+                      <button className="font-medium text-rose-600 hover:underline" onClick={() => remove(u)}>
+                        Delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>

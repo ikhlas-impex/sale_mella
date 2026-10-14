@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import ProductPicker from '../components/ProductPicker'
 import { CHALLAN_SELECT, exportChallans } from '../lib/excel'
 import { fmtMoney, round2, toNum, today } from '../lib/format'
 import { errorMessage, supabase } from '../lib/supabase'
@@ -151,7 +152,19 @@ export default function ChallanForm() {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   const removeLine = (key: number) =>
     setLines((ls) => (ls.length === 1 ? [emptyLine()] : ls.filter((l) => l.key !== key)))
-  const addLine = () => setLines((ls) => [...ls, emptyLine()])
+  const [focusKey, setFocusKey] = useState<number | null>(null)
+  const addLine = () => {
+    const line = emptyLine()
+    setFocusKey(line.key)
+    setLines((ls) => [...ls, line])
+  }
+
+  // After picking an item, jump to the field its price is based on
+  const pickProduct = (key: number, productId: string) => {
+    updateLine(key, { product_id: productId })
+    const field = productMap.get(productId)?.price_basis === 'weight' ? 'weight' : 'qty'
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`[data-${field}="${key}"]`)?.focus())
+  }
 
   const toggleSplit = (on: boolean) => {
     setIsSplit(on)
@@ -344,18 +357,12 @@ export default function ChallanForm() {
               <tr key={l.key}>
                 <td className="td text-center text-slate-500">{idx + 1}</td>
                 <td className="td">
-                  <select
-                    className="input"
+                  <ProductPicker
+                    products={optionsFor(l.product_id)}
                     value={l.product_id}
-                    onChange={(e) => updateLine(l.key, { product_id: e.target.value })}
-                  >
-                    <option value="">— Select item —</option>
-                    {optionsFor(l.product_id).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.unit}){p.active ? '' : ' – inactive'}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(pid) => pickProduct(l.key, pid)}
+                    autoFocus={l.key === focusKey}
+                  />
                 </td>
                 <td className="td">
                   <input
@@ -363,6 +370,7 @@ export default function ChallanForm() {
                     type="number"
                     min="0"
                     step="any"
+                    data-weight={l.key}
                     value={l.weight}
                     onChange={(e) => updateLine(l.key, { weight: e.target.value })}
                   />
@@ -373,6 +381,7 @@ export default function ChallanForm() {
                     type="number"
                     min="0"
                     step="any"
+                    data-qty={l.key}
                     value={l.quantity}
                     onChange={(e) => updateLine(l.key, { quantity: e.target.value })}
                   />

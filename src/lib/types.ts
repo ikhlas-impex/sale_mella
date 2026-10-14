@@ -8,6 +8,7 @@ export interface Profile {
   full_name: string
   role: Role
   approved: boolean
+  disabled?: boolean
   created_at: string
 }
 
