@@ -14,7 +14,11 @@ export default function Users() {
   const [busy, setBusy] = useState(false)
 
   const load = async () => {
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at')
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('approved')
+      .order('created_at')
     if (error) setError(errorMessage(error))
     else setUsers((data ?? []) as Profile[])
   }
@@ -49,7 +53,9 @@ export default function Users() {
     load()
   }
 
-  const update = async (u: Profile, patch: Partial<Pick<Profile, 'full_name' | 'role'>>) => {
+  const pending = users.filter((u) => !u.approved && u.role !== 'admin').length
+
+  const update = async (u: Profile, patch: Partial<Pick<Profile, 'full_name' | 'role' | 'approved'>>) => {
     const { error } = await supabase.from('profiles').update(patch).eq('id', u.id)
     if (error) setError(errorMessage(error))
     else load()
@@ -63,6 +69,12 @@ export default function Users() {
           Each challan is recorded against the user who entered it. Admins can manage master data and users.
         </p>
       </div>
+
+      {pending > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {pending} new registration{pending > 1 ? 's' : ''} waiting for approval (shown at the top of the list).
+        </div>
+      )}
 
       <form onSubmit={create} className="card grid items-end gap-3 sm:grid-cols-5">
         <div>
@@ -121,12 +133,13 @@ export default function Users() {
               <th className="th">Name</th>
               <th className="th">Email</th>
               <th className="th">Role</th>
+              <th className="th">Access</th>
               <th className="th">Created</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {users.map((u) => (
-              <tr key={u.id}>
+              <tr key={u.id} className={!u.approved && u.role !== 'admin' ? 'bg-amber-50' : ''}>
                 <td className="td">
                   <input
                     className="input"
@@ -146,6 +159,27 @@ export default function Users() {
                     <option value="user">User</option>
                     <option value="admin">Admin</option>
                   </select>
+                </td>
+                <td className="td whitespace-nowrap">
+                  {u.role === 'admin' ? (
+                    <span className="text-xs text-slate-500">Always</span>
+                  ) : u.approved ? (
+                    <span className="flex items-center gap-2">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                        Approved
+                      </span>
+                      <button
+                        className="text-xs font-medium text-rose-600 hover:underline"
+                        onClick={() => update(u, { approved: false })}
+                      >
+                        Revoke
+                      </button>
+                    </span>
+                  ) : (
+                    <button className="btn-success px-3 py-1 text-xs" onClick={() => update(u, { approved: true })}>
+                      Approve
+                    </button>
+                  )}
                 </td>
                 <td className="td text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
               </tr>

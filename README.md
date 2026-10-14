@@ -15,9 +15,9 @@ Full requirements: [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ### 1. Supabase project
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**, paste [supabase/migrations/20261013000000_init.sql](supabase/migrations/20261013000000_init.sql) and run it.
+2. Open **SQL Editor** and run each file in [supabase/migrations/](supabase/migrations/) in order (`20261013…_init.sql`, then `20261014…_self_register_approval.sql`).
    (Or with the CLI: `supabase link` then `supabase db push`.)
-3. **Authentication → Providers → Email**: turn **off** "Allow new users to sign up", so only admins can create accounts.
+3. **Authentication → Sign In / Providers → Email**: keep "Allow new users to sign up" **on** if staff should use the **Register** link on the login page. New registrations wait on the **Users** page until an admin clicks **Approve**. Turn it off to allow admin-created accounts only.
 
 ### 2. First admin
 1. **Authentication → Users → Add user** (tick *Auto confirm*).

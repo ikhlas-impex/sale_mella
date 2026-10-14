@@ -7,6 +7,7 @@ export interface Profile {
   email: string | null
   full_name: string
   role: Role
+  approved: boolean
   created_at: string
 }
 

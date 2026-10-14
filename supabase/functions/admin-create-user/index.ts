@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     password,
     email_confirm: true,
     user_metadata: { full_name: full_name ?? '' },
-    app_metadata: { role: role === 'admin' ? 'admin' : 'user' },
+    app_metadata: { role: role === 'admin' ? 'admin' : 'user', approved: true },
   })
   if (error) return json({ error: error.message }, 400)
 

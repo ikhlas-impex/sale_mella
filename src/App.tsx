@@ -10,11 +10,27 @@ import Products from './pages/Products'
 import Users from './pages/Users'
 
 function Protected({ children, admin }: { children: ReactNode; admin?: boolean }) {
-  const { session, profile, isAdmin, loading } = useAuth()
+  const { session, profile, isAdmin, loading, signOut } = useAuth()
   if (loading) return <div className="p-8 text-center text-slate-500">Loading…</div>
   if (!session) return <Navigate to="/login" replace />
   if (!profile)
     return <div className="p-8 text-center text-rose-600">No profile found for this account. Ask an admin.</div>
+  if (!profile.approved && !isAdmin)
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="card max-w-sm space-y-3 text-center">
+          <div className="text-4xl">⏳</div>
+          <h1 className="text-lg font-bold">Waiting for approval</h1>
+          <p className="text-sm text-slate-600">
+            Hi {profile.full_name}, your account has been created. An admin needs to approve it before you can start
+            entering challans.
+          </p>
+          <button className="btn-secondary w-full" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
   if (admin && !isAdmin) return <Navigate to="/challan/new" replace />
   return children
 }
