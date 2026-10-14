@@ -26,7 +26,7 @@ created / last edited it. Product master data (items + fixed prices) is managed 
 ### 2.1 Header
 | Field | Type | Rules |
 |-------|------|-------|
-| **DC No.** | text | **Auto-generated when the form opens** (e.g. `DC-00001`), **editable**. Shows a live **"Duplicate DC No."** warning if another challan already uses it. Saving with a duplicate is blocked (unique in DB). |
+| **DC No.** | text | **Auto-generated when the form opens**, **editable**. Per user: the user's last DC No. + 1, keeping prefix and padding (`EK-2806` → `EK-2807`); numbers already used are skipped; first-time users get `DC-00001`. Shows a live **"Duplicate DC No."** warning if another challan already uses it. Saving with a duplicate is blocked (unique in DB). |
 | **Date** | date | Defaults to today |
 | **Name** | text | Customer / party name, required |
 
@@ -79,7 +79,7 @@ challan_items (id, challan_id → challans, sl_no, product_id → products, prod
 ```
 
 Functions:
-- `next_dc_no()` – returns the next DC number from a Postgres sequence (`DC-00001` …). Using a sequence means two staff opening the form at the same moment never get the same number.
+- `next_dc_no()` – returns the signed-in user's last DC No. + 1 (skipping used numbers); falls back to a shared `DC-00001` sequence for users with no challans.
 - `dc_exists(p_dc_no, p_exclude_id)` – live duplicate check.
 - `save_challan(payload jsonb)` – insert/update challan + items in one transaction; looks up prices from master, recomputes amounts, validates split payment, sets `created_by` / `updated_by`.
 - `is_admin()` – helper for RLS policies.
