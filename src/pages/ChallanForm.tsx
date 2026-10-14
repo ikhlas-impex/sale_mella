@@ -25,6 +25,7 @@ export default function ChallanForm() {
   const navigate = useNavigate()
   const location = useLocation()
   const { session } = useAuth()
+  const userId = session?.user.id
 
   const [products, setProducts] = useState<Product[]>([])
   const [dcNo, setDcNo] = useState('')
@@ -32,6 +33,7 @@ export default function ChallanForm() {
   const [name, setName] = useState('')
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [discount, setDiscount] = useState('')
+  const [remarks, setRemarks] = useState('')
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('bank')
   const [isSplit, setIsSplit] = useState(false)
   const [cash, setCash] = useState('')
@@ -78,6 +80,7 @@ export default function ChallanForm() {
           setDcDate(c.dc_date)
           setName(c.customer_name)
           setDiscount(Number(c.discount) ? String(c.discount) : '')
+          setRemarks(c.remarks ?? '')
           setPaymentMode(c.payment_mode)
           setIsSplit(c.is_split)
           setCash(c.is_split ? String(c.cash_amount) : '')
@@ -98,14 +101,26 @@ export default function ChallanForm() {
       } else if (!requestedDc.current) {
         // DC No. is generated as soon as the form opens (guarded so StrictMode doesn't burn two numbers)
         requestedDc.current = true
-        await fetchNextDc()
+        // Start on the date of this user's last entry; it only changes when they change it
+        const [, { data: last }] = await Promise.all([
+          fetchNextDc(),
+          supabase
+            .from('challans')
+            .select('dc_date')
+            .eq('created_by', userId ?? '')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ])
+        if (cancelled) return
+        if (last?.dc_date) setDcDate(last.dc_date)
       }
       if (!cancelled) setLoading(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [id, fetchNextDc])
+  }, [id, fetchNextDc, userId])
 
   // ----- live duplicate DC check ---------------------------------------------
   useEffect(() => {
@@ -191,9 +206,10 @@ export default function ChallanForm() {
     }
     setError('')
     setName('')
-    setDcDate(today())
+    // Date is kept from the previous entry
     setLines([emptyLine()])
     setDiscount('')
+    setRemarks('')
     setPaymentMode('bank')
     setIsSplit(false)
     setCash('')
@@ -223,6 +239,7 @@ export default function ChallanForm() {
       dc_date: dcDate,
       customer_name: name.trim(),
       discount: discountNum,
+      remarks: remarks.trim(),
       payment_mode: paymentMode,
       is_split: isSplit,
       cash_amount: toNum(cash) ?? 0,
@@ -263,6 +280,7 @@ export default function ChallanForm() {
       customer_name: name,
       sub_total: subTotal,
       discount: discountNum,
+      remarks: remarks.trim() || null,
       final_amount: finalAmount,
       payment_mode: paymentMode,
       is_split: isSplit,
@@ -536,6 +554,19 @@ export default function ChallanForm() {
               placeholder="0.00"
               value={discount}
               onChange={(e) => setDiscount(e.target.value)}
+            />
+          </div>
+          <div className="text-sm">
+            <label className="text-slate-600" htmlFor="remarks">
+              Remarks <span className="text-xs text-slate-400">(optional)</span>
+            </label>
+            <textarea
+              id="remarks"
+              className="input mt-1 resize-y"
+              rows={2}
+              placeholder="Any note about this challan"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
             />
           </div>
           <div className="flex justify-between border-t border-slate-200 pt-3 text-lg font-bold">

@@ -153,14 +153,19 @@ export default function ChallanList() {
                   )}
                 </td>
                 <td className="td">{c.dc_date}</td>
-                <td className="td">{c.customer_name}</td>
+                <td className="td">
+                  {c.customer_name}
+                  {c.remarks && (
+                    <div className="max-w-xs truncate text-xs text-slate-400" title={c.remarks}>
+                      {c.remarks}
+                    </div>
+                  )}
+                </td>
                 <td className="td text-right">{c.challan_items?.length ?? 0}</td>
                 <td className="td text-right font-mono">{fmtMoney(c.final_amount)}</td>
                 <td className="td">
                   {c.is_split ? (
-                    <span title={`Cash ${fmtMoney(c.cash_amount)} / Bank ${fmtMoney(c.bank_amount)}`}>
-                      Split
-                    </span>
+                    <span title={`Cash ${fmtMoney(c.cash_amount)} / Bank ${fmtMoney(c.bank_amount)}`}>Split</span>
                   ) : c.payment_mode === 'cash' ? (
                     'Cash'
                   ) : (

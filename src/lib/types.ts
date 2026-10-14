@@ -39,6 +39,7 @@ export interface Challan {
   customer_name: string
   sub_total: number
   discount: number
+  remarks?: string | null
   final_amount: number
   payment_mode: PaymentMode
   is_split: boolean
