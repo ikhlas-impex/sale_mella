@@ -141,8 +141,8 @@ export default function ChallanForm() {
           ? 'Name is required'
           : usableLines.length === 0
             ? 'Add at least one item'
-            : discountNum < 0 || discountNum > subTotal
-              ? 'Discount must be between 0 and the sub total'
+            : discountNum > subTotal
+              ? 'Discount cannot be more than the sub total'
               : isSplit && splitDiff !== 0
                 ? `Split payment must add up to the final amount (difference ${fmtMoney(splitDiff)})`
                 : ''
@@ -497,12 +497,17 @@ export default function ChallanForm() {
           <div className="flex items-center justify-between gap-4 text-sm">
             <label className="text-slate-600" htmlFor="discount">
               Discount Amount
+              <span className="block text-xs text-slate-400">Use minus (−) to add an extra charge</span>
+              {discountNum < 0 && (
+                <span className="block text-xs font-medium text-amber-700">
+                  Extra charge +{fmtMoney(-discountNum)}
+                </span>
+              )}
             </label>
             <input
               id="discount"
-              className="input w-40 text-right font-mono"
+              className={`input w-40 text-right font-mono ${discountNum < 0 ? 'border-amber-400 bg-amber-50' : ''}`}
               type="number"
-              min="0"
               step="any"
               placeholder="0.00"
               value={discount}
