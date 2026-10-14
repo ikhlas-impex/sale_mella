@@ -202,10 +202,14 @@ export default function ChallanForm() {
   // ----- scan a photo of a paper challan --------------------------------------
   const [scanning, setScanning] = useState(false)
   const [scanWarnings, setScanWarnings] = useState<string[]>([])
+  const [scanProgress, setScanProgress] = useState(0)
+  const [scanText, setScanText] = useState('')
   const scanInput = useRef<HTMLInputElement>(null)
 
   const applyScan = (r: ScanResult) => {
     const warnings: string[] = []
+    setScanText(r.raw_text)
+    if (r.items.length === 0) warnings.push('No item rows could be read – please add the items by hand')
 
     if (r.dc_no) {
       const scanned = r.dc_no.trim()
@@ -273,8 +277,10 @@ export default function ChallanForm() {
     setNotice('')
     setSavedId('')
     setScanWarnings([])
+    setScanText('')
+    setScanProgress(0)
     try {
-      applyScan(await scanChallan(file))
+      applyScan(await scanChallan(file, products, setScanProgress))
       setNotice('Photo read – check every field before you Submit')
     } catch (err) {
       setError(errorMessage(err))
@@ -292,6 +298,7 @@ export default function ChallanForm() {
     }
     setError('')
     setScanWarnings([])
+    setScanText('')
     setName('')
     // Date is kept from the previous entry
     setLines([emptyLine()])
@@ -448,7 +455,10 @@ export default function ChallanForm() {
       )}
       {scanning && (
         <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-          Reading the handwriting… this usually takes 15–40 seconds.
+          Reading the photo on this device… {scanProgress > 0 ? `${scanProgress}%` : 'loading reader'}
+          <div className="text-xs text-indigo-600">
+            The first scan downloads the free reader (about 10 MB); later scans are faster.
+          </div>
         </div>
       )}
       {scanWarnings.length > 0 && (
@@ -464,6 +474,12 @@ export default function ChallanForm() {
               <li key={i}>{w}</li>
             ))}
           </ul>
+          {scanText && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs underline">Show text read from the photo</summary>
+              <pre className="mt-1 max-h-60 overflow-auto rounded bg-white p-2 text-xs whitespace-pre-wrap">{scanText}</pre>
+            </details>
+          )}
         </div>
       )}
 

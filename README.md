@@ -65,11 +65,6 @@ Production build: `npm run build`, then deploy `dist/` to Vercel / Netlify. Conf
 | Users & roles | | ✓ |
 
 ## Scan a paper challan (photo → form)
-The **📷 Scan paper challan** button on the challan form takes a photo (phone camera or file). Claude reads the handwriting, matches each item to master data, and fills the form for review. Struck-through rows are skipped, and Cash/Bank amounts become a split payment. Anything uncertain is listed in an amber "Please check" box. Nothing is saved until the user clicks Submit.
+The **📷 Scan paper challan** button on the challan form takes a photo with the phone camera or from a file. It is **free and runs on the device**: [Tesseract.js](https://github.com/naptha/tesseract.js) reads the text in the browser, and no photo is uploaded. The first scan downloads the reader once (about 10 MB). A local parser (`src/lib/scan.ts`) maps the text onto the challan layout (No., Date, M/s, item rows, Cash/Bank, Grand Total) and fuzzy-matches item names to master data. Anything uncertain is listed in an amber "Please check" box together with the raw text. Nothing is saved until the user clicks Submit.
 
-Setup (one time):
-```bash
-npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # from console.anthropic.com
-npx supabase functions deploy scan-challan
-```
-Each scan is one Claude Opus 5.5 request. The cost is roughly a few US cents, depending on photo size and how long the product list is.
+Limits: Tesseract reads **printed** text reliably (the DC No.) but **not handwriting**. On handwritten challan pages, expect only the DC No. to fill and type the rest. Neat block capitals do better.
