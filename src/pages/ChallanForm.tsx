@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthProvider'
 import ProductPicker from '../components/ProductPicker'
 import { CHALLAN_SELECT, exportChallans } from '../lib/excel'
 import { fmtMoney, round2, toNum, today } from '../lib/format'
+import { scanChallan, type ScanResult } from '../lib/scan'
 import { errorMessage, supabase } from '../lib/supabase'
 import type { Challan, PaymentMode, Product } from '../lib/types'
 
@@ -198,6 +199,91 @@ export default function ChallanForm() {
     if (n !== null) setBank(String(round2(Math.max(finalAmount - n, 0))))
   }
 
+  // ----- scan a photo of a paper challan --------------------------------------
+  const [scanning, setScanning] = useState(false)
+  const [scanWarnings, setScanWarnings] = useState<string[]>([])
+  const scanInput = useRef<HTMLInputElement>(null)
+
+  const applyScan = (r: ScanResult) => {
+    const warnings: string[] = []
+
+    if (r.dc_no) {
+      const scanned = r.dc_no.trim()
+      // Paper books carry only the number; keep this user's prefix (e.g. "EK-") when it has one
+      const prefix = /^\d+$/.test(scanned) ? (dcNo.match(/^(.*?)\d+$/)?.[1] ?? '') : ''
+      setDcNo(prefix + scanned)
+    }
+    if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setDcDate(r.date)
+    if (r.customer_name) setName(r.customer_name)
+    setRemarks([r.customer_details, r.notes].filter(Boolean).join(' · '))
+    setDiscount('')
+
+    const newLines: Line[] = []
+    for (const it of r.items) {
+      const p = it.product_id ? productMap.get(it.product_id) : undefined
+      if (!p) {
+        warnings.push(`"${it.particulars}" – no matching item in master data, please pick it`)
+      } else {
+        if (it.confidence !== 'high') warnings.push(`"${it.particulars}" → ${p.name}: please check (${it.confidence} confidence)`)
+        if (it.rate != null && Number(it.rate) !== Number(p.price))
+          warnings.push(`"${it.particulars}": paper rate ${it.rate}, master price ${p.price}`)
+      }
+      newLines.push({
+        key: ++lineKey,
+        product_id: p?.id ?? '',
+        weight: it.weight == null ? '' : String(it.weight),
+        quantity: it.quantity == null ? (p?.price_basis === 'weight' ? '1' : '') : String(it.quantity),
+      })
+    }
+    setLines(newLines.length ? newLines : [emptyLine()])
+
+    const cashAmt = r.cash_amount ?? 0
+    const bankAmt = r.bank_amount ?? 0
+    if (cashAmt > 0 && bankAmt > 0) {
+      setIsSplit(true)
+      setCash(String(cashAmt))
+      setBank(String(bankAmt))
+    } else {
+      setIsSplit(false)
+      setCash('')
+      setBank('')
+      setPaymentMode(cashAmt > 0 ? 'cash' : 'bank')
+    }
+
+    // Compare the paper total with what the master prices give
+    const computedTotal = round2(
+      newLines.reduce((sum, l) => {
+        const p = productMap.get(l.product_id)
+        if (!p) return sum
+        return sum + Number(p.price) * ((p.price_basis === 'weight' ? toNum(l.weight) : toNum(l.quantity)) ?? 0)
+      }, 0),
+    )
+    if (r.grand_total != null && Math.abs(r.grand_total - computedTotal) >= 1)
+      warnings.push(
+        `Paper grand total is ${fmtMoney(r.grand_total)} but items add up to ${fmtMoney(computedTotal)} at master prices`,
+      )
+
+    setScanWarnings(warnings)
+  }
+
+  const onScanFile = async (file: File | undefined) => {
+    if (!file) return
+    setScanning(true)
+    setError('')
+    setNotice('')
+    setSavedId('')
+    setScanWarnings([])
+    try {
+      applyScan(await scanChallan(file))
+      setNotice('Photo read – check every field before you Submit')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setScanning(false)
+      if (scanInput.current) scanInput.current.value = ''
+    }
+  }
+
   // ----- actions -------------------------------------------------------------
   const resetForNew = async (keepNotice = false) => {
     if (!keepNotice) {
@@ -205,6 +291,7 @@ export default function ChallanForm() {
       setSavedId('')
     }
     setError('')
+    setScanWarnings([])
     setName('')
     // Date is kept from the previous entry
     setLines([emptyLine()])
@@ -326,6 +413,17 @@ export default function ChallanForm() {
           </span>
         )}
         <div className="ml-auto flex gap-2">
+          <input
+            ref={scanInput}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => onScanFile(e.target.files?.[0])}
+          />
+          <button className="btn-primary" disabled={scanning} onClick={() => scanInput.current?.click()}>
+            {scanning ? 'Reading photo…' : '📷 Scan paper challan'}
+          </button>
           <button className="btn-secondary" onClick={() => resetForNew()}>
             + New
           </button>
@@ -337,7 +435,7 @@ export default function ChallanForm() {
 
       {notice && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          ✓ {notice}. Ready for the next entry.
+          ✓ {notice}{savedId && ". Ready for the next entry."}
           {savedId && (
             <Link to={`/challan/${savedId}`} className="ml-2 font-semibold underline">
               View / edit it
@@ -347,6 +445,26 @@ export default function ChallanForm() {
       )}
       {error && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+      )}
+      {scanning && (
+        <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+          Reading the handwriting… this usually takes 15–40 seconds.
+        </div>
+      )}
+      {scanWarnings.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="mb-1 flex items-center justify-between font-semibold">
+            Please check these from the scan:
+            <button className="text-xs font-normal underline" onClick={() => setScanWarnings([])}>
+              dismiss
+            </button>
+          </div>
+          <ul className="list-disc space-y-0.5 pl-5">
+            {scanWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Header */}

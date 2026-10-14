@@ -63,3 +63,13 @@ Production build: `npm run build`, then deploy `dist/` to Vercel / Netlify. Conf
 | Delete challans | | ✓ |
 | Master data (items & prices) | read only | ✓ |
 | Users & roles | | ✓ |
+
+## Scan a paper challan (photo → form)
+The **📷 Scan paper challan** button on the challan form takes a photo (phone camera or file). Claude reads the handwriting, matches each item to master data, and fills the form for review. Struck-through rows are skipped, and Cash/Bank amounts become a split payment. Anything uncertain is listed in an amber "Please check" box. Nothing is saved until the user clicks Submit.
+
+Setup (one time):
+```bash
+npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # from console.anthropic.com
+npx supabase functions deploy scan-challan
+```
+Each scan is one Claude Opus 5.5 request. The cost is roughly a few US cents, depending on photo size and how long the product list is.
