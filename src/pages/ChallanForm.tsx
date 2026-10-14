@@ -41,7 +41,10 @@ export default function ChallanForm() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState((location.state as { saved?: string } | null)?.saved ?? '')
+  const savedState = location.state as { saved?: string; savedId?: string } | null
+  const [notice, setNotice] = useState(savedState?.saved ?? '')
+  const [savedId, setSavedId] = useState(savedState?.savedId ?? '')
+  const nameRef = useRef<HTMLInputElement>(null)
   const [dup, setDup] = useState<DupState>('idle')
 
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
@@ -181,8 +184,11 @@ export default function ChallanForm() {
   }
 
   // ----- actions -------------------------------------------------------------
-  const resetForNew = async () => {
-    setNotice('')
+  const resetForNew = async (keepNotice = false) => {
+    if (!keepNotice) {
+      setNotice('')
+      setSavedId('')
+    }
     setError('')
     setName('')
     setDcDate(today())
@@ -196,6 +202,12 @@ export default function ChallanForm() {
     if (isEdit) navigate('/challan/new')
     else await fetchNextDc()
   }
+
+  // Use location.state for the saved banner only once, so a browser refresh doesn't show it again
+  useEffect(() => {
+    if (savedState?.saved) navigate(location.pathname, { replace: true, state: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const submit = async () => {
     if (validationError) {
@@ -228,12 +240,17 @@ export default function ChallanForm() {
       setError(errorMessage(error))
       return
     }
-    const msg = `Delivery challan ${payload.dc_no} saved`
+    const msg = `Delivery challan ${payload.dc_no} ${isEdit ? 'updated' : 'saved'}`
     if (isEdit) {
-      setNotice(msg)
-      setMeta((m) => (m ? { ...m, updated_at: new Date().toISOString() } : m))
+      // Edit done: go to a fresh form for the next entry
+      navigate('/challan/new', { state: { saved: msg, savedId: data as string } })
     } else {
-      navigate(`/challan/${data}`, { replace: true, state: { saved: msg } })
+      // Clear the form, generate the next DC No. and get ready for the next customer
+      setNotice(msg)
+      setSavedId(data as string)
+      await resetForNew(true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      nameRef.current?.focus()
     }
   }
 
@@ -291,7 +308,7 @@ export default function ChallanForm() {
           </span>
         )}
         <div className="ml-auto flex gap-2">
-          <button className="btn-secondary" onClick={resetForNew}>
+          <button className="btn-secondary" onClick={() => resetForNew()}>
             + New
           </button>
           <Link to="/challans" className="btn-secondary">
@@ -302,7 +319,12 @@ export default function ChallanForm() {
 
       {notice && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          ✓ {notice}
+          ✓ {notice}. Ready for the next entry.
+          {savedId && (
+            <Link to={`/challan/${savedId}`} className="ml-2 font-semibold underline">
+              View / edit it
+            </Link>
+          )}
         </div>
       )}
       {error && (
@@ -331,6 +353,7 @@ export default function ChallanForm() {
         <div>
           <label className="label">Name</label>
           <input
+            ref={nameRef}
             className="input"
             placeholder="Customer name"
             value={name}
