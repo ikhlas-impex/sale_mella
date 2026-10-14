@@ -32,7 +32,7 @@ export default function ChallanForm() {
   const [name, setName] = useState('')
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [discount, setDiscount] = useState('')
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash')
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('bank')
   const [isSplit, setIsSplit] = useState(false)
   const [cash, setCash] = useState('')
   const [bank, setBank] = useState('')
@@ -169,8 +169,9 @@ export default function ChallanForm() {
   const toggleSplit = (on: boolean) => {
     setIsSplit(on)
     if (on) {
-      setCash(String(finalAmount))
-      setBank('0')
+      // Most customers pay by bank: start with all on bank, typing a cash amount reduces it
+      setCash('0')
+      setBank(String(finalAmount))
     }
   }
   const onCashChange = (v: string) => {
@@ -187,7 +188,7 @@ export default function ChallanForm() {
     setDcDate(today())
     setLines([emptyLine()])
     setDiscount('')
-    setPaymentMode('cash')
+    setPaymentMode('bank')
     setIsSplit(false)
     setCash('')
     setBank('')
@@ -421,7 +422,7 @@ export default function ChallanForm() {
           <div>
             <span className="label">Payment Mode</span>
             <div className="flex gap-2">
-              {(['cash', 'bank'] as const).map((m) => (
+              {(['bank', 'cash'] as const).map((m) => (
                 <label
                   key={m}
                   className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
