@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
-import { errorMessage, supabase } from '../lib/supabase'
+import { errorMessage, siteUrl, supabase } from '../lib/supabase'
 
 type Mode = 'login' | 'register'
 
@@ -72,7 +72,7 @@ export default function Login() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName.trim() }, emailRedirectTo: window.location.origin },
+        options: { data: { full_name: fullName.trim() }, emailRedirectTo: siteUrl },
       })
       if (error) setError(errorMessage(error))
       else if (!data.session) {
