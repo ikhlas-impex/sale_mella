@@ -70,7 +70,10 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get('GEMINI_API_KEY')
   if (!apiKey) return json({ error: 'GEMINI_API_KEY is not set for this function' }, 500)
-  const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash'
+  // Preferred model first, then other free Flash models if it is busy or out of free quota
+  const models = [
+    ...new Set([Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']),
+  ]
 
   // Only signed-in, approved users may scan
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -95,30 +98,57 @@ Deno.serve(async (req) => {
     .map((p) => `${p.id} | ${p.name} | ${p.price_basis === 'weight' ? 'per kg' : `per ${p.unit}`} | ${p.price}`)
     .join('\n')
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: `Product master list (id | name | priced | price):\n${productList}` },
-            { inline_data: { mime_type: mimeType, data: image } },
-            { text: 'Extract this challan.' },
-          ],
-        },
-      ],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: `Product master list (id | name | priced | price):
+${productList}` },
+          { inline_data: { mime_type: mimeType, data: image } },
+          { text: 'Extract this challan.' },
+        ],
+      },
+    ],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0 },
   })
 
-  if (res.status === 429)
-    return json({ error: 'Free scan limit reached for now. It resets daily at 12:30 PM IST – please type this challan.' }, 429)
-  if (!res.ok) {
-    const detail = await res.text()
-    return json({ error: `Gemini error ${res.status}: ${detail.slice(0, 300)}` }, 502)
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  let res: Response | null = null
+  let lastStatus = 0
+  let lastDetail = ''
+  outer: for (const model of models) {
+    // Busy (503) / server error (500): retry the same model twice with a short wait.
+    // Out of free quota (429) or model unavailable (404): move straight to the next model.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body,
+      })
+      if (r.ok) {
+        res = r
+        break outer
+      }
+      lastStatus = r.status
+      lastDetail = (await r.text()).slice(0, 300)
+      console.warn(`scan-challan: ${model} attempt ${attempt + 1} -> ${r.status}`)
+      if (r.status === 503 || r.status === 500) {
+        if (attempt < 2) await sleep(1500 * (attempt + 1))
+        continue
+      }
+      if (r.status === 429 || r.status === 404) continue outer
+      return json({ error: `Gemini error ${r.status}: ${lastDetail}` }, 502)
+    }
+  }
+
+  if (!res) {
+    if (lastStatus === 429)
+      return json({ error: 'Free scan limit reached for now. It resets daily at 12:30 PM IST – please type this challan.' }, 429)
+    if (lastStatus === 503 || lastStatus === 500)
+      return json({ error: "Google's free reader is busy right now. Please try again in a minute, or type this challan." }, 503)
+    return json({ error: `Gemini error ${lastStatus}: ${lastDetail}` }, 502)
   }
 
   const out = await res.json()
