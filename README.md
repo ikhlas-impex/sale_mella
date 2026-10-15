@@ -65,6 +65,17 @@ Production build: `npm run build`, then deploy `dist/` to Vercel / Netlify. Conf
 | Users & roles | | ✓ |
 
 ## Scan a paper challan (photo → form)
-The **📷 Scan paper challan** button on the challan form takes a photo with the phone camera or from a file. It is **free and runs on the device**: [Tesseract.js](https://github.com/naptha/tesseract.js) reads the text in the browser, and no photo is uploaded. The first scan downloads the reader once (about 10 MB). A local parser (`src/lib/scan.ts`) maps the text onto the challan layout (No., Date, M/s, item rows, Cash/Bank, Grand Total) and fuzzy-matches item names to master data. Anything uncertain is listed in an amber "Please check" box together with the raw text. Nothing is saved until the user clicks Submit.
+The **📷 Scan paper challan** button on the challan form takes a photo with the phone camera or from a file. The photo is shrunk in the browser and sent to the `scan-challan` Edge Function. There, **Google Gemini (free tier)** reads the handwriting and matches each item to master data. The form is then filled for review: struck-through rows are skipped, and Cash/Bank amounts become a split payment. Anything uncertain is listed in an amber "Please check" box. Nothing is saved until the user clicks Submit.
 
-Limits: Tesseract reads **printed** text reliably (the DC No.) but **not handwriting**. On handwritten challan pages, expect only the DC No. to fill and type the rest. Neat block capitals do better.
+Setup (one time):
+1. Create a free API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). No billing is needed.
+2. Run:
+   ```bash
+   npx supabase secrets set GEMINI_API_KEY=your-key
+   npx supabase functions deploy scan-challan
+   ```
+3. Optional: change the model with `npx supabase secrets set GEMINI_MODEL=gemini-3.6-flash`. The default is `gemini-3.8-flash`.
+
+Free-tier notes:
+- Daily limits apply per Google project. Check them under AI Studio → Rate limits. They reset at midnight Pacific (12:30 PM IST). When the limit is hit, staff see a message and type the challan instead.
+- On the free tier, Google may use the photos to improve its products.
