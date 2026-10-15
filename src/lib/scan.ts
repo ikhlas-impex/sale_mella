@@ -17,6 +17,8 @@ export interface ScanResult {
   dc_no: string | null
   date: string | null
   customer_name: string | null
+  /** Bank/UPI transaction reference written on the sheet; present means paid by bank */
+  utr: string | null
   customer_details: string | null
   items: ScannedItem[]
   cash_amount: number | null

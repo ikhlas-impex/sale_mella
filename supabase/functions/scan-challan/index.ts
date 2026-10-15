@@ -27,7 +27,8 @@ const SCHEMA = {
     dc_no: nStr('Challan number printed/written next to "No." (digits as written, e.g. "2812"). Not the Plot No. in the address.'),
     date: nStr('Challan date as YYYY-MM-DD. Handwritten dates are day/month/year (Indian format).'),
     customer_name: nStr('Name written after "M/s"'),
-    customer_details: nStr('Other text on the M/s lines or Party Mob. line (phone, address, account no.)'),
+    utr: nStr('UTR / bank transaction reference: a 12-digit number (sometimes 16-22 characters) usually written on the line under the customer name. Digits only, no spaces. null if none'),
+    customer_details: nStr('Other text on the M/s lines or Party Mob. line (phone, address). Do NOT repeat the UTR here.'),
     items: {
       type: 'ARRAY',
       description: 'Line items in order. EXCLUDE rows that are struck through / crossed out.',
@@ -50,7 +51,7 @@ const SCHEMA = {
     grand_total: nNum('GRAND TOTAL (if corrected, the final un-struck value)'),
     notes: nStr('Anything unclear the checker should know, one short sentence; null if nothing'),
   },
-  required: ['dc_no', 'date', 'customer_name', 'customer_details', 'items', 'cash_amount', 'bank_amount', 'grand_total', 'notes'],
+  required: ['dc_no', 'date', 'customer_name', 'utr', 'customer_details', 'items', 'cash_amount', 'bank_amount', 'grand_total', 'notes'],
 }
 
 const SYSTEM = `You read photos of handwritten "DELIVERY CHALLAN" pages from ELKITCH PRIVATE LIMITED's challan book and extract them as data.
@@ -62,6 +63,7 @@ Rules:
 - Items without a weight are priced per piece: Amount ≈ Qty × Rate (Rate may be blank).
 - Skip any row that is crossed out or struck through. Use corrected (un-struck) values when a number was overwritten.
 - Match each Particulars text to one product from the master list. Handwriting uses short forms (e.g. "NS SP 240", "SS cooker 5L", "lid 240"). Prefer the product whose name, size and type agree. If nothing fits, set product_id to null - never invent an id.
+- A long number (usually 12 digits) written under the customer name at the top is the UTR of a bank/UPI payment. Put it in "utr", not in customer_details. A 10-digit number starting 6-9 is a mobile number, not a UTR.
 - Dates are day/month/year; a 2-digit year means 20YY.
 - Use null for anything you cannot read. Do not guess numbers.`
 

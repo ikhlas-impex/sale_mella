@@ -216,7 +216,8 @@ export default function ChallanForm() {
     }
     if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setDcDate(r.date)
     if (r.customer_name) setName(r.customer_name)
-    setRemarks([r.customer_details, r.notes].filter(Boolean).join(' · '))
+    const utr = r.utr?.replace(/\s+/g, '') || null
+    setRemarks([utr && `UTR: ${utr}`, r.customer_details, r.notes].filter(Boolean).join(' · '))
     setDiscount('')
 
     const newLines: Line[] = []
@@ -248,7 +249,11 @@ export default function ChallanForm() {
       setIsSplit(false)
       setCash('')
       setBank('')
-      setPaymentMode(cashAmt > 0 ? 'cash' : 'bank')
+      // An amount written next to Cash/Bank decides; otherwise a UTR on the sheet means Bank, none means Cash
+      const mode = bankAmt > 0 ? 'bank' : cashAmt > 0 ? 'cash' : utr ? 'bank' : 'cash'
+      setPaymentMode(mode)
+      if (!bankAmt && !cashAmt)
+        warnings.push(utr ? `UTR ${utr} found – payment set to Bank` : 'No UTR on the sheet – payment set to Cash')
     }
 
     // Make Final Amount equal the paper GRAND TOTAL: the difference from the items total
