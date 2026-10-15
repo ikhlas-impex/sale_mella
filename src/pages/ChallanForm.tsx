@@ -251,18 +251,31 @@ export default function ChallanForm() {
       setPaymentMode(cashAmt > 0 ? 'cash' : 'bank')
     }
 
-    // Compare the paper total with what the master prices give
-    const computedTotal = round2(
+    // Make Final Amount equal the paper GRAND TOTAL: the difference from the items total
+    // goes into Discount (round-off / discount; negative = extra charge)
+    const itemsTotal = round2(
       newLines.reduce((sum, l) => {
         const p = productMap.get(l.product_id)
         if (!p) return sum
-        return sum + Number(p.price) * ((p.price_basis === 'weight' ? toNum(l.weight) : toNum(l.quantity)) ?? 0)
+        return sum + round2(Number(p.price) * ((p.price_basis === 'weight' ? toNum(l.weight) : toNum(l.quantity)) ?? 0))
       }, 0),
     )
-    if (r.grand_total != null && Math.abs(r.grand_total - computedTotal) >= 1)
-      warnings.push(
-        `Paper grand total is ${fmtMoney(r.grand_total)} but items add up to ${fmtMoney(computedTotal)} at master prices`,
-      )
+    const allMatched = newLines.length > 0 && newLines.every((l) => l.product_id)
+    if (r.grand_total != null && r.grand_total > 0) {
+      const diff = round2(itemsTotal - r.grand_total)
+      if (!allMatched) {
+        warnings.push(
+          `Paper grand total is ${fmtMoney(r.grand_total)} – pick the missing items, then set Discount so the Final Amount matches`,
+        )
+      } else if (diff !== 0) {
+        setDiscount(String(diff))
+        warnings.push(
+          diff > 0
+            ? `Discount ${fmtMoney(diff)} added so the Final Amount matches the paper grand total ${fmtMoney(r.grand_total)}`
+            : `Extra charge ${fmtMoney(-diff)} added (negative discount) so the Final Amount matches the paper grand total ${fmtMoney(r.grand_total)}`,
+        )
+      }
+    }
 
     setScanWarnings(warnings)
   }
