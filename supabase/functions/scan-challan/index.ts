@@ -3,7 +3,7 @@
 // Particulars are matched to the product master list.
 //
 // Setup (free key from https://aistudio.google.com/apikey):
-//   npx supabase secrets set GEMINI_API_KEY=...
+//   npx supabase secrets set GEMINI_API_KEY=...            (or several: key1,key2,key3)
 //   npx supabase functions deploy scan-challan
 // Optional: npx supabase secrets set GEMINI_MODEL=gemini-3.6-flash  (default gemini-3.8-flash)
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -70,8 +70,13 @@ Rules:
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
-  const apiKey = Deno.env.get('GEMINI_API_KEY')
-  if (!apiKey) return json({ error: 'GEMINI_API_KEY is not set for this function' }, 500)
+  // One key, or several comma-separated keys from different Google accounts/projects:
+  // each has its own free quota, and the next key is used when one runs out or is invalid.
+  const apiKeys = (Deno.env.get('GEMINI_API_KEY') ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean)
+  if (apiKeys.length === 0) return json({ error: 'GEMINI_API_KEY is not set for this function' }, 500)
   // Preferred model first, then other free Flash models if it is busy or out of free quota
   const models = [
     ...new Set([Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']),
@@ -120,29 +125,43 @@ ${productList}` },
   let res: Response | null = null
   let lastStatus = 0
   let lastDetail = ''
-  outer: for (const model of models) {
-    // Busy (503) / server error (500): retry the same model twice with a short wait.
-    // Out of free quota (429) or model unavailable (404): move straight to the next model.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body,
-      })
-      if (r.ok) {
-        res = r
-        break outer
+  keyLoop: for (const [k, apiKey] of apiKeys.entries()) {
+    let switchKey = false
+    modelLoop: for (const model of models) {
+      // Busy (503) / server error (500): retry the same model twice with a short wait.
+      // Out of free quota (429) or model unavailable (404): move straight to the next model.
+      // Invalid / blocked key (400, 401, 403): move to the next key.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body,
+        })
+        if (r.ok) {
+          res = r
+          break keyLoop
+        }
+        lastStatus = r.status
+        lastDetail = (await r.text()).slice(0, 300)
+        console.warn(`scan-challan: key ${k + 1} ${model} attempt ${attempt + 1} -> ${r.status}`)
+        if (r.status === 503 || r.status === 500) {
+          if (attempt < 2) await sleep(1500 * (attempt + 1))
+          continue
+        }
+        if (r.status === 429) {
+          switchKey = true
+          continue modelLoop
+        }
+        if (r.status === 404) continue modelLoop
+        if (r.status === 400 || r.status === 401 || r.status === 403) {
+          switchKey = true
+          continue keyLoop
+        }
+        return json({ error: `Gemini error ${r.status}: ${lastDetail}` }, 502)
       }
-      lastStatus = r.status
-      lastDetail = (await r.text()).slice(0, 300)
-      console.warn(`scan-challan: ${model} attempt ${attempt + 1} -> ${r.status}`)
-      if (r.status === 503 || r.status === 500) {
-        if (attempt < 2) await sleep(1500 * (attempt + 1))
-        continue
-      }
-      if (r.status === 429 || r.status === 404) continue outer
-      return json({ error: `Gemini error ${r.status}: ${lastDetail}` }, 502)
     }
+    // Only quota/key problems are helped by another key; if Google is just busy, stop here
+    if (!switchKey) break
   }
 
   if (!res) {

@@ -74,7 +74,8 @@ Setup (one time):
    npx supabase secrets set GEMINI_API_KEY=your-key
    npx supabase functions deploy scan-challan
    ```
-3. Optional: change the model with `npx supabase secrets set GEMINI_MODEL=gemini-3.6-flash`. The default is `gemini-3.8-flash`.
+3. **Change the key or add more accounts:** run `npx supabase secrets set GEMINI_API_KEY=key1,key2` (comma-separated, no spaces needed). It takes effect immediately without redeploying. Keys are used in order. When one account's free quota runs out or its key is invalid, the next one is used, so each extra Google account adds its own free daily scans.
+4. Optional: change the model with `npx supabase secrets set GEMINI_MODEL=gemini-3.6-flash`. The default is `gemini-3.8-flash`.
 
 Free-tier notes:
 - Daily limits apply per Google project. Check them under AI Studio → Rate limits. They reset at midnight Pacific (12:30 PM IST). When the limit is hit, staff see a message and type the challan instead.

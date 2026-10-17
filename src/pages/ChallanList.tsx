@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { CHALLAN_SELECT, exportChallans } from '../lib/excel'
 import { fmtMoney, today } from '../lib/format'
 import { errorMessage, supabase } from '../lib/supabase'
 import type { Challan } from '../lib/types'
+
+const FETCH_BATCH = 1000
+const PAGE_SIZE = 200
 
 export default function ChallanList() {
   const { isAdmin } = useAuth()
@@ -15,19 +18,40 @@ export default function ChallanList() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
+  const [shown, setShown] = useState(PAGE_SIZE)
+  const requestId = useRef(0)
+
+  // Supabase returns at most 1000 rows per request, so fetch in pages until everything is loaded.
+  // Totals and Excel export use all rows; the table renders PAGE_SIZE at a time.
   const load = useCallback(async () => {
+    const myRequest = ++requestId.current
     setLoading(true)
-    let q = supabase.from('challans').select(CHALLAN_SELECT).order('created_at', { ascending: false })
-    if (from) q = q.gte('dc_date', from)
-    if (to) q = q.lte('dc_date', to)
     const term = search.trim().replace(/[,()]/g, ' ')
-    if (term) q = q.or(`dc_no.ilike.%${term}%,customer_name.ilike.%${term}%`)
-    const { data, error } = await q
-    if (error) setError(errorMessage(error))
-    else {
-      setError('')
-      setRows((data ?? []) as unknown as Challan[])
+    const all: Challan[] = []
+    for (let offset = 0; ; offset += FETCH_BATCH) {
+      let q = supabase
+        .from('challans')
+        .select(CHALLAN_SELECT)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + FETCH_BATCH - 1)
+      if (from) q = q.gte('dc_date', from)
+      if (to) q = q.lte('dc_date', to)
+      if (term) q = q.or(`dc_no.ilike.%${term}%,customer_name.ilike.%${term}%`)
+      const { data, error } = await q
+      if (myRequest !== requestId.current) return // a newer search/filter started
+      if (error) {
+        setError(errorMessage(error))
+        setLoading(false)
+        return
+      }
+      const batch = (data ?? []) as unknown as Challan[]
+      all.push(...batch)
+      if (batch.length < FETCH_BATCH) break
     }
+    setError('')
+    setRows(all)
+    setShown(PAGE_SIZE)
     setLoading(false)
   }, [from, to, search])
 
@@ -142,7 +166,7 @@ export default function ChallanList() {
                 </td>
               </tr>
             )}
-            {rows.map((c) => (
+            {rows.slice(0, shown).map((c) => (
               <tr key={c.id} className="hover:bg-slate-50">
                 <td className="td font-mono font-semibold">
                   {c.dc_no}
@@ -192,6 +216,14 @@ export default function ChallanList() {
             ))}
           </tbody>
         </table>
+        {rows.length > shown && (
+          <div className="flex items-center justify-between border-t border-slate-100 p-3 text-sm text-slate-500">
+            Showing {shown} of {rows.length} challans (totals and export include all)
+            <button className="btn-secondary" onClick={() => setShown((n) => n + PAGE_SIZE)}>
+              Show more
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
